@@ -550,7 +550,7 @@ private fun fetchWeatherForPlace(village: String, taluka: String, district: Stri
     val root = getJson(forecastUrl)
     val current = root.getJSONObject("current")
     val daily = root.getJSONObject("daily")
-    WeatherInfo(
+    return WeatherInfo(
         temperature = current.getDouble("temperature_2m"),
         feelsLike = current.getDouble("apparent_temperature"),
         humidity = current.getInt("relative_humidity_2m"),
