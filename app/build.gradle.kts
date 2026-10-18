@@ -4,10 +4,28 @@ plugins {
     id("org.jetbrains.kotlin.plugin.compose")
 }
 
+settings menu.
+
+‎app/build.gradle.kts‎
++5
+-12
+Lines changed: 5 additions & 12 deletions
+Original file line number	Diff line number	Diff line change
 android {
+    namespace = "com.oosmitra.ai"
+    compileSdk = 35
     // Keep your existing settings, such as namespace,
     // compileSdk, defaultConfig, and buildTypes.
 
+    defaultConfig {
+        applicationId = "com.oosmitra.ai"
+        minSdk = 26
+        targetSdk = 35
+        versionCode = 1
+        versionName = "1.0"
+    }
+    buildFeatures {
+        compose = true
     compileOptions {
         sourceCompatibility = JavaVersion.VERSION_17
         targetCompatibility = JavaVersion.VERSION_17
