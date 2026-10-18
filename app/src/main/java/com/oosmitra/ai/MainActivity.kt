@@ -3,6 +3,8 @@ package com.oosmitra.ai
 
 import android.content.Context
 import android.os.Bundle
+import android.os.Handler
+import android.os.Looper
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.compose.foundation.layout.*
@@ -20,6 +22,9 @@ import org.json.JSONObject
 import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
+import java.net.HttpURLConnection
+import java.net.URL
+import java.net.URLEncoder
 
 private val green = androidx.compose.ui.graphics.Color(0xFF176B3A)
 private val paleGreen = androidx.compose.ui.graphics.Color(0xFFE7F4EA)
@@ -89,7 +94,7 @@ class MainActivity : ComponentActivity() {
 }
 
 private enum class Screen {
-    HOME, FARM, WATER, EXPENSES, NOTES
+    HOME, FARM, WEATHER, WATER, EXPENSES, NOTES
 }
 
 @Composable
@@ -143,6 +148,12 @@ private fun OosMitraApp(context: Context) {
                         label = { Text("माझे शेत") }
                     )
                     NavigationBarItem(
+                        selected = screen == Screen.WEATHER,
+                        onClick = { screen = Screen.WEATHER },
+                        icon = { Text("🌤") },
+                        label = { Text("हवामान") }
+                    )
+                    NavigationBarItem(
                         selected = screen == Screen.WATER,
                         onClick = { screen = Screen.WATER },
                         icon = { Text("💧") },
@@ -168,11 +179,13 @@ private fun OosMitraApp(context: Context) {
                     Screen.HOME -> HomeScreen(
                         prefs = prefs,
                         onFarm = { screen = Screen.FARM },
+                        onWeather = { screen = Screen.WEATHER },
                         onWater = { screen = Screen.WATER },
                         onExpenses = { screen = Screen.EXPENSES },
                         onNotes = { screen = Screen.NOTES }
                     )
                     Screen.FARM -> FarmScreen(prefs, context)
+                    Screen.WEATHER -> WeatherScreen(prefs)
                     Screen.WATER -> WaterScreen()
                     Screen.EXPENSES -> ExpenseScreen()
                     Screen.NOTES -> NotesScreen(prefs)
@@ -186,6 +199,7 @@ private fun OosMitraApp(context: Context) {
 private fun HomeScreen(
     prefs: android.content.SharedPreferences,
     onFarm: () -> Unit,
+    onWeather: () -> Unit,
     onWater: () -> Unit,
     onExpenses: () -> Unit,
     onNotes: () -> Unit
@@ -224,12 +238,13 @@ private fun HomeScreen(
 
         Text("आजचे पर्याय", fontWeight = FontWeight.Bold)
         FeatureCard("🌾", "माझे शेत", "जिल्हा, तालुका, गाव व पीक माहिती", onFarm)
+        FeatureCard("🌤️", "आजचे हवामान", "तुमच्या गावाचा थेट हवामान अंदाज", onWeather)
         FeatureCard("💧", "पाणी व्यवस्थापन", "जमिनीतील ओलाव्यानुसार प्राथमिक सूचना", onWater)
         FeatureCard("₹", "खर्च व नफा", "उत्पन्न आणि खर्चाचा अंदाज", onExpenses)
         FeatureCard("📝", "शेत नोंदवही", "शेतातील कामांची नोंद", onNotes)
 
         Text(
-            "टीप: हा प्राथमिक ऑफलाइन नमुना आहे. तो थेट हवामान डेटा किंवा रोग ओळखणारे प्रशिक्षित AI वापरत नाही.",
+            "हवामानासाठी इंटरनेट आवश्यक आहे. हवामान माहिती: Open-Meteo.com.",
             style = MaterialTheme.typography.bodySmall
         )
     }
@@ -460,6 +475,173 @@ private fun DropdownField(
                 }
             }
         }
+    }
+}
+
+
+private data class WeatherInfo(
+    val temperature: Double,
+    val feelsLike: Double,
+    val humidity: Int,
+    val windKmh: Double,
+    val weatherCode: Int,
+    val maxTemp: Double,
+    val minTemp: Double,
+    val rainChance: Int,
+    val updatedAt: String
+)
+
+private fun weatherDescription(code: Int): String = when (code) {
+    0 -> "आकाश निरभ्र"
+    1 -> "मुख्यतः निरभ्र"
+    2 -> "अंशतः ढगाळ"
+    3 -> "ढगाळ"
+    45, 48 -> "धुके"
+    51, 53, 55 -> "रिमझिम पाऊस"
+    56, 57 -> "गोठणारा रिमझिम पाऊस"
+    61, 63, 65 -> "पाऊस"
+    66, 67 -> "गोठणारा पाऊस"
+    71, 73, 75, 77 -> "हिमवृष्टी"
+    80, 81, 82 -> "पावसाच्या सरी"
+    85, 86 -> "हिमवृष्टीच्या सरी"
+    95, 96, 99 -> "मेघगर्जनेसह वादळ"
+    else -> "हवामानाची माहिती उपलब्ध"
+}
+
+private fun fetchWeatherForPlace(village: String, taluka: String, district: String): WeatherInfo {
+    fun getJson(urlText: String): JSONObject {
+        val connection = (URL(urlText).openConnection() as HttpURLConnection)
+        connection.connectTimeout = 12000
+        connection.readTimeout = 12000
+        connection.requestMethod = "GET"
+        try {
+            if (connection.responseCode !in 200..299) {
+                throw IllegalStateException("सर्व्हरकडून माहिती मिळाली नाही (${connection.responseCode})")
+            }
+            return connection.inputStream.bufferedReader(Charsets.UTF_8).use { JSONObject(it.readText()) }
+        } finally {
+            connection.disconnect()
+        }
+    }
+
+    // Geocoding search works best with the village name; administrative names
+    // are used below to choose the most plausible matching result.
+    val encoded = URLEncoder.encode(village, "UTF-8")
+    val geo = getJson("https://geocoding-api.open-meteo.com/v1/search?name=$encoded&count=10&language=en&format=json")
+    val results = geo.optJSONArray("results") ?: throw IllegalStateException("गाव सापडले नाही. माझ्या शेतात गावाची माहिती तपासा.")
+    if (results.length() == 0) throw IllegalStateException("या गावाचे स्थान सापडले नाही. गावाचे नाव तपासा.")
+
+    // Prefer matching district/taluka/village result where the geocoder provides administrative fields.
+    var chosen = results.getJSONObject(0)
+    for (i in 0 until results.length()) {
+        val item = results.getJSONObject(i)
+        val admin = (item.optString("admin1") + " " + item.optString("admin2") + " " + item.optString("name")).lowercase(Locale.ROOT)
+        if (admin.contains(district.lowercase(Locale.ROOT)) || admin.contains(taluka.lowercase(Locale.ROOT))) {
+            chosen = item
+            break
+        }
+    }
+    val lat = chosen.getDouble("latitude")
+    val lon = chosen.getDouble("longitude")
+    val forecastUrl = "https://api.open-meteo.com/v1/forecast?latitude=$lat&longitude=$lon" +
+        "&current=temperature_2m,relative_humidity_2m,apparent_temperature,weather_code,wind_speed_10m" +
+        "&daily=temperature_2m_max,temperature_2m_min,precipitation_probability_max,weather_code" +
+        "&timezone=auto&forecast_days=1"
+    val root = getJson(forecastUrl)
+    val current = root.getJSONObject("current")
+    val daily = root.getJSONObject("daily")
+    WeatherInfo(
+        temperature = current.getDouble("temperature_2m"),
+        feelsLike = current.getDouble("apparent_temperature"),
+        humidity = current.getInt("relative_humidity_2m"),
+        windKmh = current.getDouble("wind_speed_10m"),
+        weatherCode = current.getInt("weather_code"),
+        maxTemp = daily.getJSONArray("temperature_2m_max").getDouble(0),
+        minTemp = daily.getJSONArray("temperature_2m_min").getDouble(0),
+        rainChance = daily.getJSONArray("precipitation_probability_max").optInt(0, 0),
+        updatedAt = current.optString("time", "")
+    )
+}
+
+@Composable
+private fun WeatherScreen(prefs: android.content.SharedPreferences) {
+    val village = prefs.getString("village", "") ?: ""
+    val taluka = prefs.getString("taluka", "") ?: ""
+    val district = prefs.getString("district", "") ?: ""
+    var weather by remember { mutableStateOf<WeatherInfo?>(null) }
+    var loading by remember { mutableStateOf(false) }
+    var error by remember { mutableStateOf("") }
+    var lastLocation by remember { mutableStateOf("") }
+
+    fun refresh() {
+        if (village.isBlank() || district.isBlank()) {
+            error = "कृपया प्रथम ‘माझे शेत’ मध्ये जिल्हा, तालुका आणि गाव निवडून माहिती जतन करा."
+            return
+        }
+        loading = true
+        error = ""
+        Thread {
+            try {
+                val result = fetchWeatherForPlace(village, taluka, district)
+                Handler(Looper.getMainLooper()).post {
+                    weather = result
+                    loading = false
+                    lastLocation = "$village, $district"
+                }
+            } catch (e: Exception) {
+                Handler(Looper.getMainLooper()).post {
+                    error = e.message ?: "हवामान मिळवता आले नाही. इंटरनेट तपासा."
+                    loading = false
+                }
+            }
+        }.start()
+    }
+
+    LaunchedEffect(village, taluka, district) { refresh() }
+
+    Column(
+        Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(16.dp),
+        verticalArrangement = Arrangement.spacedBy(12.dp)
+    ) {
+        Text("आजचे हवामान", style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold, color = green)
+        Text(if (village.isBlank()) "गाव निवडल्यानंतर स्थानिक हवामान दिसेल." else "स्थान: $village${if (taluka.isNotBlank()) ", $taluka" else ""}, $district")
+
+        if (loading && weather == null) {
+            LinearProgressIndicator(Modifier.fillMaxWidth())
+            Text("हवामानाची माहिती मिळवत आहोत…")
+        }
+        if (error.isNotBlank()) {
+            Card(colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.errorContainer)) {
+                Text(error, Modifier.padding(12.dp))
+            }
+        }
+        weather?.let { w ->
+            Card(colors = CardDefaults.cardColors(containerColor = paleGreen)) {
+                Column(Modifier.fillMaxWidth().padding(18.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                    Text(weatherDescription(w.weatherCode), style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold, color = green)
+                    Text("%.1f°C".format(Locale.ROOT, w.temperature), style = MaterialTheme.typography.displaySmall, fontWeight = FontWeight.Bold, color = green)
+                    Text("जाणवणारे तापमान: %.1f°C".format(Locale.ROOT, w.feelsLike))
+                    HorizontalDivider()
+                    Text("कमाल तापमान: %.1f°C    |    किमान तापमान: %.1f°C".format(Locale.ROOT, w.maxTemp, w.minTemp))
+                    Text("पावसाची शक्यता: ${w.rainChance}%")
+                    Text("आर्द्रता: ${w.humidity}%")
+                    Text("वाऱ्याचा वेग: %.1f किमी/तास".format(Locale.ROOT, w.windKmh))
+                    if (w.updatedAt.isNotBlank()) Text("माहितीची वेळ: ${w.updatedAt.replace('T', ' ')}", style = MaterialTheme.typography.bodySmall)
+                }
+            }
+            Text("ऊस शेतीसाठी सूचना", fontWeight = FontWeight.Bold)
+            Text(when {
+                w.rainChance >= 70 -> "पावसाची शक्यता जास्त आहे. सिंचनाचा निर्णय घेण्यापूर्वी स्थानिक परिस्थिती आणि प्रत्यक्ष पाऊस तपासा."
+                w.temperature >= 35 -> "उष्णता जास्त आहे. शेतातील ओलावा तपासा आणि सिंचनाबाबत स्थानिक कृषी सल्ला पाळा."
+                w.weatherCode in listOf(61, 63, 65, 80, 81, 82, 95, 96, 99) -> "पाऊस किंवा वादळाची शक्यता/स्थिती आहे. शेतात पाणी साचणार नाही याची काळजी घ्या."
+                else -> "हवामानानुसार निर्णय घेण्यापूर्वी जमिनीतील ओलावा, पिकाची अवस्था आणि स्थानिक कृषी सल्ला तपासा."
+            })
+        }
+        Button(onClick = { refresh() }, enabled = !loading, modifier = Modifier.fillMaxWidth()) {
+            Text(if (loading) "माहिती मिळवत आहोत…" else "हवामान पुन्हा तपासा")
+        }
+        Text("हवामान डेटा: Open-Meteo.com · अंदाजात बदल होऊ शकतो. ही माहिती हमी किंवा अधिकृत आपत्ती सूचना नाही.", style = MaterialTheme.typography.bodySmall)
+        Text("गावाचे नाव किंवा स्थान चुकीचे दिसल्यास ‘माझे शेत’ मध्ये गाव तपासा.", style = MaterialTheme.typography.bodySmall)
     }
 }
 
