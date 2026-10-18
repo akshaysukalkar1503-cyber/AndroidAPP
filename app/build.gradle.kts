@@ -1,13 +1,13 @@
+
 plugins {
     id("com.android.application")
     id("org.jetbrains.kotlin.android")
     id("org.jetbrains.kotlin.plugin.compose")
 }
+
 android {
     namespace = "com.oosmitra.ai"
     compileSdk = 35
-    // Keep your existing settings, such as namespace,
-    // compileSdk, defaultConfig, and buildTypes.
 
     defaultConfig {
         applicationId = "com.oosmitra.ai"
@@ -16,8 +16,11 @@ android {
         versionCode = 1
         versionName = "1.0"
     }
+
     buildFeatures {
         compose = true
+    }
+
     compileOptions {
         sourceCompatibility = JavaVersion.VERSION_17
         targetCompatibility = JavaVersion.VERSION_17
@@ -28,8 +31,13 @@ android {
     }
 }
 
+kotlin {
+    jvmToolchain(17)
+}
+
 dependencies {
     val composeBom = platform("androidx.compose:compose-bom:2024.12.01")
+
     implementation(composeBom)
     androidTestImplementation(composeBom)
 
@@ -41,5 +49,6 @@ dependencies {
     implementation("androidx.compose.foundation:foundation")
     implementation("androidx.lifecycle:lifecycle-runtime-ktx:2.8.7")
     implementation("androidx.lifecycle:lifecycle-viewmodel-compose:2.8.7")
+
     debugImplementation("androidx.compose.ui:ui-tooling")
 }
