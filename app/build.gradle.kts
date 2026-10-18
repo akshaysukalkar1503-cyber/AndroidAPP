@@ -3,14 +3,6 @@ plugins {
     id("org.jetbrains.kotlin.android")
     id("org.jetbrains.kotlin.plugin.compose")
 }
-
-settings menu.
-
-‎app/build.gradle.kts‎
-+5
--12
-Lines changed: 5 additions & 12 deletions
-Original file line number	Diff line number	Diff line change
 android {
     namespace = "com.oosmitra.ai"
     compileSdk = 35
