@@ -3,8 +3,8 @@
         android:allowBackup="true"
         android:label="ऊस मित्र AI"
         android:supportsRtl="true"
-        android:icon="@mipmap/ic_launcher"
-        android:roundIcon="@mipmap/ic_launcher"
+        android:icon="@drawable/oosmitra_logo"
+        android:roundIcon="@drawable/oosmitra_logo"
         android:theme="@android:style/Theme.Material.Light.NoActionBar">
         <activity
             android:name=".MainActivity"
